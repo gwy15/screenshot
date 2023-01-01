@@ -32,22 +32,23 @@ impl Transcoder {
             .context("no video stream found")?;
         let input_stream_index = ist.index();
         let time_base = ist.time_base();
-        debug!("ist time_base: {}", time_base,);
+        debug!(
+            "ist index: {}, time_base: {}",
+            input_stream_index, time_base
+        );
+        debug!(
+            "video duration: {}, video frames: {}",
+            ist.duration(),
+            ist.frames()
+        );
 
         let decoder = ffmpeg::codec::context::Context::from_parameters(ist.parameters())?
             .decoder()
             .video()?;
         info!("video size: W {} x H {}", decoder.width(), decoder.height(),);
 
-        let duration_ts = ist.duration();
-        if duration_ts < 0 {
-            bail!("video duration < 0: {}", duration_ts);
-        }
-        if duration_ts > i32::MAX as i64 {
-            bail!("video duration > i32::MAX: {}", duration_ts);
-        }
-        let duration_s = Rational::new(duration_ts as i32, 1) * time_base;
-        info!("video duration: {}", utils::VideoDuration(duration_s),);
+        let duration_s = Self::decide_duration(&ist)?;
+        info!("video duration: {}", utils::VideoDuration(duration_s));
 
         let scaler = scaling::Context::get(
             decoder.format(),
@@ -69,6 +70,27 @@ impl Transcoder {
             decoded_frame: frame::Video::empty(),
             scaled_frame: frame::Video::empty(),
         })
+    }
+
+    fn decide_duration(ist: &format::stream::Stream) -> Result<Rational> {
+        let duration_ts = ist.duration();
+        if 0 < duration_ts && duration_ts < i32::MAX as i64 {
+            let duration_s = Rational::new(duration_ts as i32, 1) * ist.time_base();
+            return Ok(duration_s);
+        }
+        let meta = ist.metadata();
+        for (key, value) in meta.iter() {
+            debug!("ist metadata: {} = {}", key, value);
+            if key.starts_with("DURATION") {
+                let Ok(duration_s) = utils::parse_duration(value) else { continue };
+                return Ok(duration_s);
+            }
+        }
+
+        anyhow::bail!(
+            "I don't know the duration of input (stream #{})",
+            ist.index()
+        );
     }
 
     fn run(&mut self, mut ictx: format::context::Input) -> Result<()> {
