@@ -16,13 +16,17 @@ fn main() -> Result<()> {
     let input = std::path::Path::new(&input);
 
     let num_of_frames = 16;
-    let mut extractor = frame_extractor::FrameExtractor::new(input, num_of_frames)?;
+    // let scaled_frame_width = 960;
+    let scaled_frame_width = 321;
+    let mut extractor =
+        frame_extractor::FrameExtractor::new(input, num_of_frames, scaled_frame_width)?;
     // extractor.extract_frames_to_ppm()?;
     while extractor.extract_frame_to_internal_buffer()? {
-        let frame = &mut extractor.extracted_BGR_frame;
-        let (width, height) = (frame.width(), frame.height());
+        let frame = &mut extractor.extracted_bgr_frame;
+        let (width, height, line_size) = (frame.width(), frame.height(), frame.stride(0));
         let data = frame.data_mut(0);
-        image_maker::open_frame_data(width, height, data)?;
+
+        let mat = image_maker::open_frame_data(width as usize, height as usize, line_size, data)?;
     }
 
     Ok(())
