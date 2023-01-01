@@ -115,9 +115,8 @@ impl FrameExtractor {
             for (stream, packet) in self.ictx.packets() {
                 if stream.index() == self.input_stream_index {
                     debug!(
-                        "got one packet, sending to decoder... size: {}, duration: {:.3}, position: {}, pts: {}",
+                        "got one packet, sending to decoder... packet size: {}, position: {}, pts: {}",
                         packet.size(),
-                        utils::VideoDuration(self.convert_pts(packet.duration())?),
                         utils::VideoDuration(self.convert_pts(packet.position() as i64)?),
                         utils::VideoDuration(self.convert_pts(packet.pts().unwrap_or(0))?),
                     );
@@ -142,29 +141,31 @@ impl FrameExtractor {
     }
 
     fn receive_and_process_decoded_frame(&mut self) -> Result<bool> {
-        self.decoder.receive_frame(&mut self.decoded_frame).ok();
+        if self.decoder.receive_frame(&mut self.decoded_frame).is_ok() {
+            debug!(
+                " decoder got one frame: frame size W {} x H {}, format {:?}, kind {:?}, pts {}",
+                self.decoded_frame.width(),
+                self.decoded_frame.height(),
+                self.decoded_frame.format(),
+                self.decoded_frame.kind(),
+                utils::VideoDuration(self.convert_pts(self.decoded_frame.pts().unwrap_or(0))?),
+            );
+            let frame_time = self.convert_pts(self.decoded_frame.pts().unwrap_or(0))?;
+            debug!(
+                "   computed frame_time: {}",
+                utils::VideoDuration(frame_time)
+            );
 
-        debug!(
-            " decoder got one frame: size W {} x H {}, format {:?}, kind {:?}, pts {}",
-            self.decoded_frame.width(),
-            self.decoded_frame.height(),
-            self.decoded_frame.format(),
-            self.decoded_frame.kind(),
-            utils::VideoDuration(self.convert_pts(self.decoded_frame.pts().unwrap_or(0))?),
-        );
-        let frame_time = self.convert_pts(self.decoded_frame.pts().unwrap_or(0))?;
-        debug!(
-            "   computed frame_time: {}",
-            utils::VideoDuration(frame_time)
-        );
-
-        self.scaler
-            .run(&self.decoded_frame, &mut self.extracted_rgb_frame)
-            .context("Scale failed")?;
-        if self.extracted_rgb_frame.planes() != 1 {
-            bail!("scaled frame planes != 1");
+            self.scaler
+                .run(&self.decoded_frame, &mut self.extracted_rgb_frame)
+                .context("Scale failed")?;
+            if self.extracted_rgb_frame.planes() != 1 {
+                bail!("scaled frame planes != 1");
+            }
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(true)
     }
 
     fn save_rgb_frame(frame: &frame::Video, filename: &Path) -> Result<()> {
