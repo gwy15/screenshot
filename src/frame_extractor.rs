@@ -21,7 +21,7 @@ pub struct FrameExtractor {
 
     // buffer
     decoded_frame: frame::Video,
-    pub extracted_rgb_frame: frame::Video,
+    pub extracted_BGR_frame: frame::Video,
 }
 impl FrameExtractor {
     pub fn new(input_file: &Path, num_of_frames: u32) -> Result<Self> {
@@ -55,7 +55,8 @@ impl FrameExtractor {
             decoder.format(),
             decoder.width(),
             decoder.height(),
-            ffmpeg::util::format::Pixel::RGB24,
+            ffmpeg::util::format::Pixel::BGR24,
+            // TODO: scale to wanted size!
             decoder.width(),
             decoder.height(),
             scaling::Flags::BILINEAR,
@@ -71,7 +72,7 @@ impl FrameExtractor {
             packets_generated: 0,
             num_of_frames,
             decoded_frame: frame::Video::empty(),
-            extracted_rgb_frame: frame::Video::empty(),
+            extracted_BGR_frame: frame::Video::empty(),
         })
     }
 
@@ -157,9 +158,9 @@ impl FrameExtractor {
             );
 
             self.scaler
-                .run(&self.decoded_frame, &mut self.extracted_rgb_frame)
+                .run(&self.decoded_frame, &mut self.extracted_BGR_frame)
                 .context("Scale failed")?;
-            if self.extracted_rgb_frame.planes() != 1 {
+            if self.extracted_BGR_frame.planes() != 1 {
                 bail!("scaled frame planes != 1");
             }
             Ok(true)
@@ -168,7 +169,7 @@ impl FrameExtractor {
         }
     }
 
-    fn save_rgb_frame(frame: &frame::Video, filename: &Path) -> Result<()> {
+    fn save_BGR_frame(frame: &frame::Video, filename: &Path) -> Result<()> {
         use std::io::Write;
         let mut f = std::fs::File::create(filename)?;
         let (w, h) = (
@@ -198,8 +199,8 @@ impl FrameExtractor {
     pub fn extract_frames_to_ppm(&mut self) -> Result<()> {
         for (idx, frame) in self.enumerate() {
             let frame = frame?;
-            let filename = format!("frame-{}-rgb.ppm", idx);
-            Self::save_rgb_frame(&frame, Path::new(&filename)).context("save rgb frame failed")?;
+            let filename = format!("frame-{}-BGR.ppm", idx);
+            Self::save_BGR_frame(&frame, Path::new(&filename)).context("save BGR frame failed")?;
         }
         Ok(())
     }
@@ -213,7 +214,7 @@ impl Iterator for FrameExtractor {
             Ok(extracted) => {
                 if extracted {
                     let mut output = frame::Video::empty();
-                    std::mem::swap(&mut output, &mut self.extracted_rgb_frame);
+                    std::mem::swap(&mut output, &mut self.extracted_BGR_frame);
                     Some(Ok(output))
                 } else {
                     None
