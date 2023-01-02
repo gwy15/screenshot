@@ -72,8 +72,8 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args, output: &Path) -> R
         }
     }
 
-    opencv::highgui::imshow("image", &canvas)?;
-    opencv::highgui::wait_key(0)?;
+    // opencv::highgui::imshow("image", &canvas)?;
+    // opencv::highgui::wait_key(0)?;
 
     // encode image
     let mut buf = Vector::new();

@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate tracing;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use ffmpeg_next as ffmpeg;
 
@@ -10,14 +10,12 @@ mod frame_extractor;
 mod image_maker;
 mod utils;
 
-fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
-    ffmpeg::init().context("ffmpeg init failed")?;
-
-    let args = cli::Args::parse();
-
+fn run(file: &std::path::Path, args: &cli::Args) -> Result<()> {
+    assert!(file.exists());
+    assert!(file.is_file());
+    info!("Generating for file {}", file.display());
     let mut extractor = frame_extractor::FrameExtractor::new(
-        &args.input,
+        file,
         args.num_of_frames(),
         args.scaled_frame_width(),
     )?;
@@ -35,8 +33,43 @@ fn main() -> Result<()> {
         frames.push((mat, time.to_string()));
     }
 
-    let output = args.output_name(&args.input)?;
-    image_maker::merge_images(frames, &args, &output)?;
+    let output = args.output_name(file)?;
+    image_maker::merge_images(frames, args, &output)?;
+    Ok(())
+}
+
+fn visit_recursive_dir(dir: &std::path::Path, args: &cli::Args) -> Result<()> {
+    for entry in dir.read_dir()? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            let Some(ext) =  path.extension() else {continue};
+            let Some(ext) = ext.to_str() else {continue};
+            if matches!(ext, "mp4" | "mkv" | "avi" | "webm" | "mov" | "flv" | "ts") {
+                run(&path, args)?;
+            } else {
+                debug!("skipping file: {}", path.display());
+            }
+        } else {
+            visit_recursive_dir(&path, args)?;
+        }
+    }
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+    ffmpeg::init().context("ffmpeg init failed")?;
+
+    let args = cli::Args::parse();
+    if !args.input.exists() {
+        bail!("input file does not exist: {}", args.input.display());
+    }
+    if args.input.is_dir() {
+        visit_recursive_dir(&args.input, &args)?;
+    } else {
+        run(&args.input, &args)?;
+    }
 
     Ok(())
 }
