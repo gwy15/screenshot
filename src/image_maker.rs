@@ -5,6 +5,7 @@ use opencv::{
     imgcodecs, imgproc,
     prelude::*,
 };
+use std::io::Write;
 use std::path::Path;
 
 /// data are in BGR24 format, read data as opencv image
@@ -72,21 +73,45 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args, output: &Path) -> R
         }
     }
 
-    // opencv::highgui::imshow("image", &canvas)?;
-    // opencv::highgui::wait_key(0)?;
-
     // encode image
     let mut buf = Vector::new();
     let flags = Vector::new();
     let ext = format!(".{}", args.ext);
     imgcodecs::imencode(&ext, &canvas, &mut buf, &flags)?;
-    let mut f = std::fs::File::create(output)?;
-    use std::io::Write;
-    f.write_all(buf.as_slice())?;
 
-    info!("image saved to {}", output.display());
+    if args.show {
+        // instead of using the imshow, use system default image viewer
+        let tempfile = std::env::temp_dir().join(output.file_name().unwrap());
+        debug!("tempfile: {}", tempfile.display());
+        let mut f = std::fs::File::create(&tempfile)?;
+        f.write_all(buf.as_slice())?;
+        std::mem::drop(f);
+        system_open(&tempfile)?;
+    }
+    if args.no_save {
+        info!("image not saved");
+    } else {
+        let mut f = std::fs::File::create(output)?;
+        f.write_all(buf.as_slice())?;
+        info!("image saved to {}", output.display());
+    }
 
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn system_open(path: &Path) -> Result<()> {
+    use std::process::Command;
+    Command::new("cmd")
+        .args(&["/C", "start", path.to_str().unwrap()])
+        .spawn()?
+        .wait()?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn system_open(path: &Path) -> Result<()> {
+    compile_error!("not implemented")
 }
 
 fn draw_text(img: &mut Mat, text: &str, x: u32, y: u32, im_h: u32) -> Result<()> {

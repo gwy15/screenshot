@@ -18,3 +18,8 @@ opencv = { version = "=0.54.0", features = ["clang-runtime"] }
 [dependencies.ffmpeg-next]
 version = "5.1.1"
 features = []
+
+[profile.release]
+opt-level = 's'
+lto = true
+debug = false
