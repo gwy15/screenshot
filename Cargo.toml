@@ -11,6 +11,8 @@ anyhow = "1"
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 
+clap = { version = "4.0.32", features = ["derive"] }
+
 opencv = { version = "=0.54.0", features = ["clang-runtime"] }
 
 [dependencies.ffmpeg-next]

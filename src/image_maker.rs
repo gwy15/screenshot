@@ -1,10 +1,11 @@
-use anyhow::{Context, Result};
+use crate::cli::Args;
+use anyhow::Result;
 use opencv::{
     core::{self as cv_core, prelude::*, Rect, Vector},
     imgcodecs, imgproc,
     prelude::*,
-    Error,
 };
+use std::path::Path;
 
 /// data are in BGR24 format, read data as opencv image
 pub fn open_frame_data(
@@ -30,9 +31,79 @@ pub fn open_frame_data(
         }
     }
 
-    // imshow
-    opencv::highgui::imshow("image", &mat)?;
+    Ok(mat)
+}
+
+pub fn merge_images(images: Vec<(Mat, String)>, args: &Args, output: &Path) -> Result<()> {
+    assert!(!images.is_empty());
+    let (im_w, im_h) = (images[0].0.cols() as u32, images[0].0.rows() as u32);
+
+    let canvas_w = im_w * args.cols + args.space * (args.cols + 1);
+    let canvas_h = im_h * args.rows + args.space * (args.rows + 1);
+
+    let mut canvas = Mat::new_rows_cols_with_default(
+        canvas_h as i32,
+        canvas_w as i32,
+        cv_core::CV_8UC3,
+        cv_core::Scalar::all(255.),
+    )?;
+
+    for r in 0..args.rows {
+        for c in 0..args.cols {
+            let (image, text) = &images[r as usize * args.cols as usize + c as usize];
+            // put image to canvas
+            let x = args.space + c * (args.space + im_w);
+            let y = args.space + r * (args.space + im_h);
+            let pos = Rect::new(x as i32, y as i32, im_w as i32, im_h as i32);
+            let mut roi = Mat::roi(&canvas, pos)?;
+            image.copy_to(&mut roi)?;
+            // draw border, shift one pixel out
+            let border_color = cv_core::Scalar::new(0., 0., 0., 0.);
+            let border_pos = Rect::new(
+                (x - 1) as i32,
+                (y - 1) as i32,
+                (im_w + 2) as i32,
+                (im_h + 2) as i32,
+            );
+            imgproc::rectangle(&mut canvas, border_pos, border_color, 1, imgproc::LINE_8, 0)?;
+
+            // draw text
+            draw_text(&mut canvas, text, x, y, im_h)?;
+        }
+    }
+
+    opencv::highgui::imshow("image", &canvas)?;
     opencv::highgui::wait_key(0)?;
 
-    Ok(mat)
+    // encode image
+    let mut buf = Vector::new();
+    let flags = Vector::new();
+    let ext = format!(".{}", args.ext);
+    imgcodecs::imencode(&ext, &canvas, &mut buf, &flags)?;
+    let mut f = std::fs::File::create(output)?;
+    use std::io::Write;
+    f.write_all(buf.as_slice())?;
+
+    info!("image saved to {}", output.display());
+
+    Ok(())
+}
+
+fn draw_text(img: &mut Mat, text: &str, x: u32, y: u32, im_h: u32) -> Result<()> {
+    // render text
+    let point = cv_core::Point::new((x + 5) as i32, (y + im_h - 5) as i32);
+    // let point = cv_core::Point::new(pos.x, pos.y);
+    imgproc::put_text(
+        img,
+        text,
+        point,
+        imgproc::FONT_HERSHEY_DUPLEX,
+        0.9,
+        cv_core::Scalar::all(255.),
+        1,
+        imgproc::LINE_8,
+        false,
+    )?;
+
+    Ok(())
 }

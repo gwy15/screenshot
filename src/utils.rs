@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use ffmpeg_next::Rational;
 use std::fmt;
 
+#[derive(Clone, Copy)]
 pub struct VideoDuration(pub Rational);
 
 impl VideoDuration {

@@ -22,6 +22,7 @@ pub struct FrameExtractor {
     // buffer
     decoded_frame: frame::Video,
     pub extracted_bgr_frame: frame::Video,
+    pub extracted_bgr_frame_time: utils::VideoDuration,
 }
 impl FrameExtractor {
     pub fn new(input_file: &Path, num_of_frames: u32, scaled_frame_size: u32) -> Result<Self> {
@@ -72,6 +73,7 @@ impl FrameExtractor {
             num_of_frames,
             decoded_frame: frame::Video::empty(),
             extracted_bgr_frame: frame::Video::empty(),
+            extracted_bgr_frame_time: utils::VideoDuration(Rational::new(0, 1)),
         })
     }
 
@@ -142,18 +144,15 @@ impl FrameExtractor {
 
     fn receive_and_process_decoded_frame(&mut self) -> Result<bool> {
         if self.decoder.receive_frame(&mut self.decoded_frame).is_ok() {
+            let pts = self.convert_pts(self.decoded_frame.pts().unwrap_or(0))?;
+            let frame_time = pts;
             debug!(
                 " decoder got one frame: frame size W {} x H {}, format {:?}, kind {:?}, pts {}",
                 self.decoded_frame.width(),
                 self.decoded_frame.height(),
                 self.decoded_frame.format(),
                 self.decoded_frame.kind(),
-                utils::VideoDuration(self.convert_pts(self.decoded_frame.pts().unwrap_or(0))?),
-            );
-            let frame_time = self.convert_pts(self.decoded_frame.pts().unwrap_or(0))?;
-            debug!(
-                "   computed frame_time: {}",
-                utils::VideoDuration(frame_time)
+                frame_time,
             );
 
             self.scaler
@@ -162,6 +161,7 @@ impl FrameExtractor {
             if self.extracted_bgr_frame.planes() != 1 {
                 bail!("scaled frame planes != 1");
             }
+            self.extracted_bgr_frame_time = utils::VideoDuration(frame_time);
             Ok(true)
         } else {
             Ok(false)
@@ -186,7 +186,7 @@ impl FrameExtractor {
         Ok(())
     }
 
-    fn convert_pts(&self, pts: i64) -> Result<Rational> {
+    pub fn convert_pts(&self, pts: i64) -> Result<Rational> {
         if pts > i32::MAX as i64 {
             bail!("pts too large: {}", pts);
         }
