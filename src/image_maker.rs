@@ -128,7 +128,7 @@ fn draw_text(img: &mut Mat, text: &str, x: u32, y: u32, im_h: u32) -> Result<()>
             0.9,
             cv_core::Scalar::all(*color),
             1,
-            imgproc::LINE_8,
+            imgproc::LINE_AA,
             false,
         )?;
     }
