@@ -1,5 +1,5 @@
 use crate::cli::Args;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use opencv::{
     core::{self as cv_core, prelude::*, Rect, Vector},
     imgcodecs, imgproc,
@@ -81,7 +81,14 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args, output: &Path) -> R
 
     if args.show {
         // instead of using the imshow, use system default image viewer
-        let tempfile = std::env::temp_dir().join(output.file_name().unwrap());
+        // make a temp file with the ext but a space-free name
+        let filename = output
+            .file_name()
+            .context("get file_name failed")?
+            .to_str()
+            .context("get file_name str failed")?
+            .replace(' ', "_");
+        let tempfile = std::env::temp_dir().join(filename);
         debug!("tempfile: {}", tempfile.display());
         let mut f = std::fs::File::create(&tempfile)?;
         f.write_all(buf.as_slice())?;
@@ -103,9 +110,12 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args, output: &Path) -> R
 fn system_open(path: &Path) -> Result<()> {
     use std::process::Command;
     Command::new("cmd")
-        .args(&["/C", "start", path.to_str().unwrap()])
-        .spawn()?
-        .wait()?;
+        .args(&["/C", "start", path.to_string_lossy().as_ref()])
+        .spawn()
+        .context("spawn start failed")?
+        .wait()
+        .context("wait subprocess failed")?;
+
     Ok(())
 }
 
