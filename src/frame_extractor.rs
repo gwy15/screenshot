@@ -86,22 +86,21 @@ impl FrameExtractor {
     }
 
     fn decide_duration(ist: &format::stream::Stream) -> Result<Rational> {
-        let mut duration_ts = ist.duration();
-        let mut time_base = ist.time_base();
-        time_base = time_base.reduce();
-        let gcd = gcd(duration_ts, time_base.denominator() as i64);
-        duration_ts /= gcd;
-        time_base.1 /= gcd as i32;
+        let duration_ts = ist.duration();
+        if duration_ts > 0 && duration_ts != ffmpeg::sys::AV_NOPTS_VALUE {
+            let time_base = ist.time_base();
 
-        debug!(
-            "raw duration: {}, time_base: {}",
-            duration_ts,
-            ist.time_base()
-        );
-        if 0 < duration_ts && duration_ts < i32::MAX as i64 {
-            let duration_s = Rational::new(duration_ts as i32, 1) * ist.time_base();
-            return Ok(duration_s);
+            debug!(
+                "raw duration: {}, time_base: {}",
+                duration_ts,
+                ist.time_base()
+            );
+            let duration =
+                Self::safe_mul(duration_ts, time_base).context("Compute duration failed")?;
+            return Ok(duration);
         }
+
+        // try from meta
         let meta = ist.metadata();
         for (key, value) in meta.iter() {
             debug!("ist metadata: {} = {}", key, value);
@@ -145,8 +144,8 @@ impl FrameExtractor {
                     debug!(
                         "got one packet, sending to decoder... packet size: {}, position: {}, pts: {}",
                         packet.size(),
-                        utils::VideoDuration(self.convert_pts(packet.position() as i64)?),
-                        utils::VideoDuration(self.convert_pts(packet.pts().unwrap_or(0))?),
+                        utils::VideoDuration(self.convert_pts(packet.position() as i64)),
+                        utils::VideoDuration(self.convert_pts(packet.pts().unwrap_or(0))),
                     );
                     self.decoder
                         .send_packet(&packet)
@@ -170,7 +169,7 @@ impl FrameExtractor {
 
     fn receive_and_process_decoded_frame(&mut self) -> Result<bool> {
         if self.decoder.receive_frame(&mut self.decoded_frame).is_ok() {
-            let pts = self.convert_pts(self.decoded_frame.pts().unwrap_or(0))?;
+            let pts = self.convert_pts(self.decoded_frame.pts().unwrap_or(0));
             let frame_time = pts;
             debug!(
                 " decoder got one frame: frame size W {} x H {}, format {:?}, kind {:?}, pts {}",
@@ -212,13 +211,14 @@ impl FrameExtractor {
         Ok(())
     }
 
-    pub fn convert_pts(&self, pts: i64) -> Result<Rational> {
-        if pts > i32::MAX as i64 {
-            bail!("pts too large: {}", pts);
-        }
-        let pts = pts as i32;
-        let r = Rational::new(pts, 1).reduce() * self.time_base;
-        Ok(r)
+    pub fn convert_pts(&self, pts: i64) -> Rational {
+        Self::safe_mul(pts, self.time_base)
+            .with_context(|| format!("compute {} * {} failed", pts, self.time_base))
+            .unwrap_or_else(|e| {
+                warn!("compute pts failed: {:#}, fallback to f64", e);
+                let f = (pts * self.time_base.0 as i64) as f64 / self.time_base.1 as f64;
+                Rational::from(f)
+            })
     }
 
     #[allow(dead_code)]
@@ -229,6 +229,20 @@ impl FrameExtractor {
             Self::save_bgr_frame(&frame, Path::new(&filename)).context("save BGR frame failed")?;
         }
         Ok(())
+    }
+
+    fn safe_mul(a: i64, r: Rational) -> Result<Rational> {
+        let r = r.reduce();
+        let mut a = a * r.0 as i64;
+        let mut b = r.1 as i64;
+        let gcd = gcd(a, b);
+        a /= gcd;
+        b /= gcd;
+        if a > i32::MAX as i64 || b > i32::MAX as i64 {
+            bail!("overflow");
+        }
+
+        Ok(Rational(a as i32, b as i32))
     }
 }
 
