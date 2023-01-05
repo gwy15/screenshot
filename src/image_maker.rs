@@ -1,12 +1,10 @@
 use crate::cli::Args;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use opencv::{
     core::{self as cv_core, prelude::*, Rect, Vector},
     imgcodecs, imgproc,
     prelude::*,
 };
-use std::io::Write;
-use std::path::Path;
 
 /// data are in BGR24 format, read data as opencv image
 pub fn open_frame_data(
@@ -35,7 +33,8 @@ pub fn open_frame_data(
     Ok(mat)
 }
 
-pub fn merge_images(images: Vec<(Mat, String)>, args: &Args, output: &Path) -> Result<()> {
+/// 返回
+pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::Vector<u8>> {
     assert!(!images.is_empty());
     let (im_w, im_h) = (images[0].0.cols() as u32, images[0].0.rows() as u32);
 
@@ -79,54 +78,7 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args, output: &Path) -> R
     let ext = format!(".{}", args.ext);
     imgcodecs::imencode(&ext, &canvas, &mut buf, &flags)?;
 
-    if args.show {
-        // instead of using the imshow, use system default image viewer
-        // make a temp file with the ext but a space-free name
-        let filename = output
-            .file_name()
-            .context("get file_name failed")?
-            .to_str()
-            .context("get file_name str failed")?
-            .replace(' ', "_");
-        let tempfile = std::env::temp_dir().join(filename);
-        debug!("tempfile: {}", tempfile.display());
-        let mut f = std::fs::File::create(&tempfile)?;
-        f.write_all(buf.as_slice())?;
-        std::mem::drop(f);
-        system_open(&tempfile)?;
-    }
-    if args.no_save {
-        info!("image not saved");
-    } else {
-        let mut f = std::fs::File::create(output)?;
-        f.write_all(buf.as_slice())?;
-        info!("image saved to {}", output.display());
-    }
-
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn system_open(path: &Path) -> Result<()> {
-    use std::os::windows::process::CommandExt;
-    use std::process::Command;
-
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    Command::new("cmd")
-        .args(&["/C", "start", path.to_string_lossy().as_ref()])
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .context("spawn start failed")?
-        .wait()
-        .context("wait subprocess failed")?;
-
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn system_open(path: &Path) -> Result<()> {
-    compile_error!("not implemented")
+    Ok(buf)
 }
 
 fn draw_text(img: &mut Mat, text: &str, x: u32, y: u32, im_h: u32) -> Result<()> {
