@@ -5,6 +5,14 @@ use std::path::Path;
 
 use ffmpeg::{decoder, format, frame, software::scaling, Rational};
 
+fn gcd(a: i64, b: i64) -> i64 {
+    if b == 0 {
+        a
+    } else {
+        gcd(b, a % b)
+    }
+}
+
 pub struct FrameExtractor {
     ictx: format::context::Input,
 
@@ -78,7 +86,18 @@ impl FrameExtractor {
     }
 
     fn decide_duration(ist: &format::stream::Stream) -> Result<Rational> {
-        let duration_ts = ist.duration();
+        let mut duration_ts = ist.duration();
+        let mut time_base = ist.time_base();
+        time_base = time_base.reduce();
+        let gcd = gcd(duration_ts, time_base.denominator() as i64);
+        duration_ts /= gcd;
+        time_base.1 /= gcd as i32;
+
+        debug!(
+            "raw duration: {}, time_base: {}",
+            duration_ts,
+            ist.time_base()
+        );
         if 0 < duration_ts && duration_ts < i32::MAX as i64 {
             let duration_s = Rational::new(duration_ts as i32, 1) * ist.time_base();
             return Ok(duration_s);
