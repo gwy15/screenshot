@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(feature = "window", windows_subsystem = "windows")]
 
 #[macro_use]
 extern crate tracing;
@@ -104,7 +104,7 @@ fn visit_recursive_dir(dir: &std::path::Path, args: &cli::Args) -> Result<()> {
             let Some(ext) =  path.extension() else {continue};
             let Some(ext) = ext.to_str() else {continue};
             if matches!(ext, "mp4" | "mkv" | "avi" | "webm" | "mov" | "flv" | "ts") {
-                run(&path, args)?;
+                run(&path, args).with_context(|| format!("处理文件 {} 错误", path.display()))?;
             } else {
                 debug!("skipping file: {}", path.display());
             }
@@ -115,7 +115,7 @@ fn visit_recursive_dir(dir: &std::path::Path, args: &cli::Args) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn _main() -> Result<()> {
     tracing_subscriber::fmt::init();
     ffmpeg::init().context("ffmpeg init failed")?;
 
@@ -126,8 +126,29 @@ fn main() -> Result<()> {
     if args.input.is_dir() {
         visit_recursive_dir(&args.input, &args)?;
     } else {
-        run(&args.input, &args)?;
+        run(&args.input, &args)
+            .with_context(|| format!("处理文件 {} 错误", args.input.display()))?;
     }
 
     Ok(())
+}
+
+fn main() -> Result<()> {
+    let r = _main();
+    // msgbox
+    #[cfg(feature = "window")]
+    if let Err(e) = r.as_ref() {
+        msgbox::create(
+            "创建缩略图发生错误",
+            &format!("{:#?}", e),
+            msgbox::IconType::Error,
+        )
+        .map_err(|e| {
+            error!("msgbox failed: {:#?}", e);
+            e
+        })
+        .ok();
+    }
+
+    r
 }

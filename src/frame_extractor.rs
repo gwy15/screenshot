@@ -90,13 +90,14 @@ impl FrameExtractor {
         if duration_ts > 0 && duration_ts != ffmpeg::sys::AV_NOPTS_VALUE {
             let time_base = ist.time_base();
 
-            debug!(
-                "raw duration: {}, time_base: {}",
-                duration_ts,
-                ist.time_base()
-            );
-            let duration =
-                Self::safe_mul(duration_ts, time_base).context("Compute duration failed")?;
+            debug!("raw duration: {}, time_base: {}", duration_ts, time_base);
+            let duration = Self::safe_mul(duration_ts, time_base).unwrap_or_else(|e| {
+                warn!(
+                    "Compute duration {} * {} failed: {e:#}",
+                    duration_ts, time_base
+                );
+                Rational::from(((duration_ts * time_base.0 as i64) as f64) / time_base.1 as f64)
+            });
             return Ok(duration);
         }
 
