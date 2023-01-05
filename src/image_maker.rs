@@ -108,9 +108,14 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args, output: &Path) -> R
 
 #[cfg(target_os = "windows")]
 fn system_open(path: &Path) -> Result<()> {
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
+
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
     Command::new("cmd")
         .args(&["/C", "start", path.to_string_lossy().as_ref()])
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .context("spawn start failed")?
         .wait()
