@@ -112,7 +112,14 @@ impl FrameExtractor {
             trace!(" seeking with position = {}", position);
             self.ictx
                 .seek(position, position..)
-                .context("Seek to timestamp failed")?;
+                .or_else(|e| {
+                    warn!(
+                        "seek to {}.. failed: {e:#}, trying with more range",
+                        utils::VideoDuration(t)
+                    );
+                    self.ictx.seek(position, ..)
+                })
+                .with_context(|| format!("Seek to {} failed", utils::VideoDuration(t)))?;
 
             for (stream, packet) in self.ictx.packets() {
                 if stream.index() == self.input_stream_index {
