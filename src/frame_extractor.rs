@@ -159,7 +159,7 @@ impl FrameExtractor {
                 self.decoded_frame.height(),
                 self.decoded_frame.format(),
                 self.decoded_frame.kind(),
-                frame_time,
+                utils::VideoDuration(frame_time),
             );
 
             self.scaler
