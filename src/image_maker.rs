@@ -44,9 +44,14 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
         );
     }
     let (im_w, im_h) = (images[0].0.cols() as u32, images[0].0.rows() as u32);
+    let (mut rows, mut cols) = (args.rows, args.cols);
+    if im_w < im_h && rows > cols {
+        debug!("自动调整行列数，使得图片不会太高");
+        std::mem::swap(&mut rows, &mut cols);
+    }
 
-    let canvas_w = im_w * args.cols + args.space * (args.cols + 1);
-    let canvas_h = im_h * args.rows + args.space * (args.rows + 1);
+    let canvas_w = im_w * cols + args.space * (cols + 1);
+    let canvas_h = im_h * rows + args.space * (rows + 1);
 
     let mut canvas = Mat::new_rows_cols_with_default(
         canvas_h as i32,
@@ -55,9 +60,9 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
         cv_core::Scalar::all(255.),
     )?;
 
-    'row: for r in 0..args.rows {
-        for c in 0..args.cols {
-            let idx = r as usize * args.cols as usize + c as usize;
+    'row: for r in 0..rows {
+        for c in 0..cols {
+            let idx = r as usize * cols as usize + c as usize;
             let Some((image, text)) = images.get(idx) else { break 'row; };
             // put image to canvas
             let x = args.space + c * (args.space + im_w);
