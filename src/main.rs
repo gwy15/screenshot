@@ -8,6 +8,7 @@ use clap::Parser;
 use ffmpeg_next as ffmpeg;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
 mod cli;
@@ -107,12 +108,12 @@ fn is_video(path: &Path) -> bool {
 }
 
 fn visit_recursive_dir(
-    dir: &Path,
-    args: &cli::Args,
-    errors: &mut Vec<(PathBuf, anyhow::Error)>,
-) -> Result<()> {
-    for entry in dir.read_dir()? {
-        let entry = entry?;
+    dir: PathBuf,
+    args: Arc<cli::Args>,
+    error_tx: mpsc::Sender<(PathBuf, anyhow::Error)>,
+) {
+    for entry in dir.read_dir().unwrap() {
+        let entry = entry.unwrap();
         let path = entry.path();
         if path.is_file() {
             let is_video = is_video(&path);
@@ -121,25 +122,30 @@ fn visit_recursive_dir(
                 continue;
             }
             info!("处理文件 {}", path.display());
-            let t = Instant::now();
-            let run_result = run(&path, args);
-            match run_result {
-                Ok(_) => {
-                    info!("处理文件成功，耗时 {:?}：{}", t.elapsed(), path.display());
-                }
-                Err(e) => {
-                    if args.ignore_error {
-                        errors.push((path.clone(), e));
-                    } else {
-                        return Err(e);
+            let error_tx = error_tx.clone();
+            let args = Arc::clone(&args);
+
+            let task = move || {
+                let t = Instant::now();
+                let run_result = run(&path, &args);
+                match run_result {
+                    Ok(_) => {
+                        info!("处理文件成功，耗时 {:?}：{}", t.elapsed(), path.display());
+                    }
+                    Err(e) => {
+                        error_tx.send((path, e)).unwrap();
                     }
                 }
             };
+            rayon::spawn(task);
         } else {
-            visit_recursive_dir(&path, args, errors)?;
+            let e_tx = error_tx.clone();
+            let args = Arc::clone(&args);
+            rayon::spawn(move || {
+                visit_recursive_dir(path, args, e_tx.clone());
+            });
         }
     }
-    Ok(())
 }
 
 fn _main() -> Result<()> {
@@ -151,13 +157,20 @@ fn _main() -> Result<()> {
         bail!("input file does not exist: {}", args.input.display());
     }
     if args.input.is_dir() {
+        let (error_tx, error_rx) = mpsc::channel();
+        let args = Arc::new(args);
+        visit_recursive_dir(args.input.clone(), args.clone(), error_tx);
         let mut errors = vec![];
-        visit_recursive_dir(&args.input, &args, &mut errors)?;
-        if args.ignore_error {
-            info!("处理文件完成, 有 {} 个文件处理失败：", errors.len());
-            for (path, e) in errors {
-                error!("处理文件 {} 错误: {:#}", path.display(), e);
+        while let Ok((path, e)) = error_rx.recv() {
+            if args.ignore_error {
+                bail!("处理文件 {} 错误: {:#}", path.display(), e);
             }
+            errors.push((path, e));
+        }
+
+        info!("处理文件完成, 有 {} 个文件处理失败：", errors.len());
+        for (path, e) in errors.iter() {
+            error!("处理文件 {} 错误: {:#}", path.display(), e);
         }
     } else {
         run(&args.input, &args)
