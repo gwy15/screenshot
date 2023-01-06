@@ -35,7 +35,9 @@ pub fn open_frame_data(
 
 /// 返回
 pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::Vector<u8>> {
-    assert!(!images.is_empty());
+    if images.is_empty() {
+        anyhow::bail!("没有截图生成");
+    }
     if images.len() != args.num_of_frames() as usize {
         warn!(
             "截图数量 {} 与预期 {} 不匹配，可能有截图生成错误",
