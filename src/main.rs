@@ -8,6 +8,7 @@ use clap::Parser;
 use ffmpeg_next as ffmpeg;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 mod cli;
 mod frame_extractor;
@@ -120,10 +121,11 @@ fn visit_recursive_dir(
                 continue;
             }
             info!("处理文件 {}", path.display());
+            let t = Instant::now();
             let run_result = run(&path, args);
             match run_result {
                 Ok(_) => {
-                    info!("处理文件成功: {}", path.display());
+                    info!("处理文件成功，耗时 {:?}：{}", t.elapsed(), path.display());
                 }
                 Err(e) => {
                     if args.ignore_error {
