@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 use ffmpeg_next as ffmpeg;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod cli;
 mod frame_extractor;
@@ -17,7 +17,7 @@ mod utils;
 fn run(file: &std::path::Path, args: &cli::Args) -> Result<()> {
     assert!(file.exists());
     assert!(file.is_file());
-    info!("Generating for file {}", file.display());
+    debug!("Generating for file {}", file.display());
     let mut extractor = frame_extractor::FrameExtractor::new(
         file,
         args.num_of_frames(),
@@ -96,20 +96,45 @@ fn system_open(path: &Path) -> Result<()> {
     compile_error!("not implemented")
 }
 
-fn visit_recursive_dir(dir: &std::path::Path, args: &cli::Args) -> Result<()> {
+fn is_video(path: &Path) -> bool {
+    let ext = path.extension().and_then(|s| s.to_str());
+    let Some(ext) = ext else {return false};
+    matches!(
+        ext,
+        "mp4" | "m4v" | "mkv" | "avi" | "webm" | "mov" | "flv" | "ts"
+    )
+}
+
+fn visit_recursive_dir(
+    dir: &Path,
+    args: &cli::Args,
+    errors: &mut Vec<(PathBuf, anyhow::Error)>,
+) -> Result<()> {
     for entry in dir.read_dir()? {
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {
-            let Some(ext) =  path.extension() else {continue};
-            let Some(ext) = ext.to_str() else {continue};
-            if matches!(ext, "mp4" | "mkv" | "avi" | "webm" | "mov" | "flv" | "ts") {
-                run(&path, args).with_context(|| format!("处理文件 {} 错误", path.display()))?;
-            } else {
+            let is_video = is_video(&path);
+            if !is_video {
                 debug!("skipping file: {}", path.display());
+                continue;
             }
+            info!("处理文件 {}", path.display());
+            let run_result = run(&path, args);
+            match run_result {
+                Ok(_) => {
+                    info!("处理文件成功: {}", path.display());
+                }
+                Err(e) => {
+                    if args.ignore_error {
+                        errors.push((path.clone(), e));
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
         } else {
-            visit_recursive_dir(&path, args)?;
+            visit_recursive_dir(&path, args, errors)?;
         }
     }
     Ok(())
@@ -124,7 +149,14 @@ fn _main() -> Result<()> {
         bail!("input file does not exist: {}", args.input.display());
     }
     if args.input.is_dir() {
-        visit_recursive_dir(&args.input, &args)?;
+        let mut errors = vec![];
+        visit_recursive_dir(&args.input, &args, &mut errors)?;
+        if args.ignore_error {
+            info!("处理文件完成, 有 {} 个文件处理失败：", errors.len());
+            for (path, e) in errors {
+                error!("处理文件 {} 错误: {:#}", path.display(), e);
+            }
+        }
     } else {
         run(&args.input, &args)
             .with_context(|| format!("处理文件 {} 错误", args.input.display()))?;

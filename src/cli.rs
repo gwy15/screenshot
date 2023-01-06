@@ -28,6 +28,9 @@ pub struct Args {
     #[clap(long, help = "是否跳过保存")]
     pub no_save: bool,
 
+    #[clap(long, help = "在处理文件夹时，不进行报错，而是跳过")]
+    pub ignore_error: bool,
+
     #[clap(help = "视频路径")]
     pub input: PathBuf,
 }

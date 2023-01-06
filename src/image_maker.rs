@@ -36,6 +36,13 @@ pub fn open_frame_data(
 /// 返回
 pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::Vector<u8>> {
     assert!(!images.is_empty());
+    if images.len() != args.num_of_frames() as usize {
+        warn!(
+            "截图数量 {} 与预期 {} 不匹配，可能有截图生成错误",
+            images.len(),
+            args.num_of_frames()
+        );
+    }
     let (im_w, im_h) = (images[0].0.cols() as u32, images[0].0.rows() as u32);
 
     let canvas_w = im_w * args.cols + args.space * (args.cols + 1);
@@ -48,9 +55,10 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
         cv_core::Scalar::all(255.),
     )?;
 
-    for r in 0..args.rows {
+    'row: for r in 0..args.rows {
         for c in 0..args.cols {
-            let (image, text) = &images[r as usize * args.cols as usize + c as usize];
+            let idx = r as usize * args.cols as usize + c as usize;
+            let Some((image, text)) = images.get(idx) else { break 'row; };
             // put image to canvas
             let x = args.space + c * (args.space + im_w);
             let y = args.space + r * (args.space + im_h);

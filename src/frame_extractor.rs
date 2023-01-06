@@ -55,10 +55,10 @@ impl FrameExtractor {
         let decoder = ffmpeg::codec::context::Context::from_parameters(ist.parameters())?
             .decoder()
             .video()?;
-        info!("video size: W {} x H {}", decoder.width(), decoder.height(),);
+        debug!("video size: W {} x H {}", decoder.width(), decoder.height(),);
 
         let duration_s = Self::decide_duration(&ist)?;
-        info!("video duration: {}", utils::VideoDuration(duration_s));
+        debug!("video duration: {}", utils::VideoDuration(duration_s));
 
         let scaler = scaling::Context::get(
             decoder.format(),
