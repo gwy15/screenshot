@@ -36,7 +36,7 @@ default-features = false
 features = ["codec", "format", "software-scaling"]
 
 [dependencies.opencv]
-version = "=0.54.0"
+version = "0.74.2"
 default-features = false
-features = ["clang-runtime"]
+features = ["imgcodecs", "imgproc"]
 
