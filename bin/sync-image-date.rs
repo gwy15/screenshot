@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     let source = find_video(f)?;
 
     let meta = std::fs::metadata(&source)?;
-    filetime::set_file_mtime(&f, FileTime::from_last_modification_time(&meta))?;
+    filetime::set_file_mtime(f, FileTime::from_last_modification_time(&meta))?;
 
     Ok(())
 }
