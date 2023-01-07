@@ -1,0 +1,10 @@
+/target
+
+*.mp4
+*.mkv
+*.ppm
+*.ps1
+*.jpg
+
+.dockerignore
+Dockerfile
