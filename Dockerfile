@@ -16,7 +16,7 @@ FROM debian:bullseye-slim
 WORKDIR /code
 RUN apt update \
     && apt-get install -y libopencv-core4.5 libopencv-imgproc4.5 libopencv-imgcodecs4.5 \
-            libavformat58 libavcodec58 \
+            libavformat58 libavcodec58 libswscale5 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /code/target/release/screenshot .
 ENTRYPOINT [ "./screenshot" ]
