@@ -19,5 +19,6 @@ RUN apt update \
             libavformat58 libavcodec58 libswscale5 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /code/target/release/screenshot .
+RUN ./screenshot --help
 ENTRYPOINT [ "./screenshot" ]
 CMD []
