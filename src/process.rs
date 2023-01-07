@@ -59,6 +59,7 @@ fn run(file: &std::path::Path, args: &cli::Args) -> Result<()> {
     let output = args.output_name(file)?;
     let buf = image_maker::merge_images(frames, args)?;
 
+    #[cfg(target_os = "windows")]
     if args.show {
         // instead of using the imshow, use system default image viewer
         // make a temp file with the ext but a space-free name
@@ -110,10 +111,6 @@ fn system_open(path: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
-fn system_open(path: &Path) -> Result<()> {
-    compile_error!("not implemented")
-}
 
 fn is_video(path: &Path) -> bool {
     let ext = path.extension().and_then(|s| s.to_str());

@@ -22,6 +22,7 @@ pub struct Args {
     #[clap(long, help = "输出文件去掉视频扩展名")]
     pub remove_ext: bool,
 
+    #[cfg(target_os = "windows")]
     #[clap(long, help = "是否用一个窗口显示")]
     pub show: bool,
 
