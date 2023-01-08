@@ -34,9 +34,12 @@ pub struct Args {
 
     #[clap(
         long,
-        help = "当图片是竖屏时，默认自动调整纵向和横向数量。使用 --no-auto-flip 可以禁用此功能"
+        help = "当图片是竖屏时，默认自动调整纵向和横向数量。使用此选项可以禁用此功能"
     )]
     pub no_auto_flip: bool,
+
+    #[clap(long, help = "默认会覆盖已存文件，使用此选项可以禁用此功能")]
+    pub no_overwrite: bool,
 
     #[clap(help = "视频路径")]
     pub input: PathBuf,

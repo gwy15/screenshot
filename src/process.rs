@@ -79,11 +79,20 @@ fn run(file: &std::path::Path, args: &cli::Args) -> Result<()> {
     if args.no_save {
         info!("image not saved");
     } else {
+        if output.exists() {
+            if args.no_overwrite {
+                info!("图片 {} 已存在, 跳过", output.display());
+                return Ok(());
+            } else {
+                info!("图片 {} 已存在, 覆盖", output.display());
+            }
+        }
+
         let meta = std::fs::metadata(file)?;
         let mut f = std::fs::File::create(&output)?;
         f.write_all(buf.as_slice())?;
         std::mem::drop(f);
-        info!("image saved to {}", output.display());
+        debug!("缩略图保存到 {}", output.display());
         // set time
         use filetime::FileTime;
         filetime::set_file_mtime(output, FileTime::from_last_modification_time(&meta))?;
@@ -110,7 +119,6 @@ fn system_open(path: &Path) -> Result<()> {
 
     Ok(())
 }
-
 
 fn is_video(path: &Path) -> bool {
     let ext = path.extension().and_then(|s| s.to_str());
