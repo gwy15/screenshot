@@ -125,7 +125,7 @@ fn is_video(path: &Path) -> bool {
     let Some(ext) = ext else {return false};
     matches!(
         ext,
-        "mp4" | "m4v" | "mkv" | "avi" | "webm" | "mov" | "flv" | "ts"
+        "mp4" | "m4v" | "mkv" | "avi" | "webm" | "mov" | "flv" | "ts" | "wmv"
     )
 }
 
