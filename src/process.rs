@@ -36,6 +36,14 @@ pub fn start(args: cli::Args) -> Result<()> {
 fn run(file: &std::path::Path, args: &cli::Args) -> Result<()> {
     assert!(file.exists());
     assert!(file.is_file());
+
+    let output = args.output_name(file)?;
+    let should_save = !args.no_save && !output.exists();
+    if !args.show && !should_save {
+        info!("文件 {} 已存在, 跳过", output.display());
+        return Ok(());
+    }
+
     debug!("Generating for file {}", file.display());
     let mut extractor = frame_extractor::FrameExtractor::new(
         file,
@@ -56,7 +64,6 @@ fn run(file: &std::path::Path, args: &cli::Args) -> Result<()> {
         frames.push((mat, time.to_string()));
     }
 
-    let output = args.output_name(file)?;
     let buf = image_maker::merge_images(frames, args)?;
 
     #[cfg(target_os = "windows")]
@@ -124,7 +131,7 @@ fn is_video(path: &Path) -> bool {
     let ext = path.extension().and_then(|s| s.to_str());
     let Some(ext) = ext else {return false};
     matches!(
-        ext,
+        ext.to_lowercase().as_str(),
         "mp4" | "m4v" | "mkv" | "avi" | "webm" | "mov" | "flv" | "ts" | "wmv"
     )
 }
