@@ -38,9 +38,13 @@ fn run(file: &std::path::Path, args: &cli::Args) -> Result<()> {
     assert!(file.is_file());
 
     let output = args.output_name(file)?;
+    #[cfg(target_os = "windows")]
+    let should_show = args.show;
+    #[cfg(not(target_os = "windows"))]
+    let should_show = false;
     let should_save = !args.no_save && !output.exists();
-    if !args.show && !should_save {
-        info!("文件 {} 已存在, 跳过", output.display());
+    if !should_show && !should_save {
+        info!("不需要处理文件 {}, 跳过", output.display());
         return Ok(());
     }
 
