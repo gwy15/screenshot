@@ -83,7 +83,7 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
             imgproc::rectangle(&mut canvas, border_pos, border_color, 1, imgproc::LINE_8, 0)?;
 
             // draw text
-            draw_text(&mut canvas, text, x, y, im_h)?;
+            crate::text::draw_text(&mut canvas, text, x + 5, y + im_h - 5)?;
         }
     }
 
@@ -94,25 +94,4 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
     imgcodecs::imencode(&ext, &canvas, &mut buf, &flags)?;
 
     Ok(buf)
-}
-
-fn draw_text(img: &mut Mat, text: &str, x: u32, y: u32, im_h: u32) -> Result<()> {
-    const DATA: &[(u32, f64)] = &[(2, 16.), (1, 0.), (0, 255.)];
-
-    // 先写一个黑色的背景
-    for (offset, color) in DATA {
-        let point = cv_core::Point::new((x + 5 + offset) as i32, (y + im_h - 5 + offset) as i32);
-        imgproc::put_text(
-            img,
-            text,
-            point,
-            imgproc::FONT_HERSHEY_DUPLEX,
-            0.9,
-            cv_core::Scalar::all(*color),
-            1,
-            imgproc::LINE_AA,
-            false,
-        )?;
-    }
-    Ok(())
 }

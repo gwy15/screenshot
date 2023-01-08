@@ -12,6 +12,7 @@ mod frame_extractor;
 mod image_maker;
 mod process;
 mod utils;
+mod text;
 
 fn _main() -> Result<()> {
     ffmpeg::init().context("ffmpeg init failed")?;
