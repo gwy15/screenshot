@@ -57,7 +57,7 @@ impl FrameExtractor {
             .video()?;
         debug!("video size: W {} x H {}", decoder.width(), decoder.height(),);
 
-        let duration_s = Self::decide_duration(&ist)?;
+        let duration_s = Self::decide_duration(&ictx, &ist)?;
         debug!("video duration: {}", utils::VideoDuration(duration_s));
 
         let scaler = scaling::Context::get(
@@ -85,7 +85,10 @@ impl FrameExtractor {
         })
     }
 
-    fn decide_duration(ist: &format::stream::Stream) -> Result<Rational> {
+    fn decide_duration(
+        ictx: &format::context::Input,
+        ist: &format::stream::Stream,
+    ) -> Result<Rational> {
         let duration_ts = ist.duration();
         if duration_ts > 0 && duration_ts != ffmpeg::sys::AV_NOPTS_VALUE {
             let time_base = ist.time_base();
@@ -103,12 +106,26 @@ impl FrameExtractor {
 
         // try from meta
         let meta = ist.metadata();
+        debug!(
+            "trying to find duration from {} metadata",
+            meta.iter().count()
+        );
         for (key, value) in meta.iter() {
             debug!("ist metadata: {} = {}", key, value);
             if key.starts_with("DURATION") {
                 let Ok(duration_s) = utils::parse_duration(value) else { continue };
                 return Ok(duration_s);
             }
+        }
+
+        // try from ictx
+        let duration = unsafe {
+            let ctx = &*(ictx.as_ptr());
+            ctx.duration
+        };
+        if duration > 0 && duration != ffmpeg::sys::AV_NOPTS_VALUE {
+            let d_f64 = duration as f64 / ffmpeg::sys::AV_TIME_BASE as f64;
+            return Ok(Rational::from(d_f64));
         }
 
         anyhow::bail!(
