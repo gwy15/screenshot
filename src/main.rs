@@ -10,10 +10,10 @@ use ffmpeg_next as ffmpeg;
 mod cli;
 mod frame_extractor;
 mod image_maker;
-mod process;
-mod utils;
-mod text;
 mod info;
+mod process;
+mod text;
+mod utils;
 
 fn _main() -> Result<()> {
     ffmpeg::init().context("ffmpeg init failed")?;
@@ -24,6 +24,7 @@ fn _main() -> Result<()> {
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
+    #[allow(clippy::let_and_return)]
     let r = _main();
     // msgbox
     #[cfg(feature = "gui")]

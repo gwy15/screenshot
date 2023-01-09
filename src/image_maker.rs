@@ -6,6 +6,10 @@ use opencv::{
     prelude::*,
 };
 
+const TIME_FONT_SIZE: f32 = 32.0;
+const TIME_FONT_COLOR: (u8, u8, u8) = (0xFF, 0xFF, 0xFF);
+const TIME_FONT_BG_COLOR: (u8, u8, u8) = (0x22, 0x22, 0x22);
+
 /// data are in BGR24 format, read data as opencv image
 pub fn open_frame_data(
     width: usize,
@@ -93,7 +97,15 @@ pub fn merge_images(
             #[cfg(not(feature = "font"))]
             crate::text::draw_text(&mut canvas, text, x + 5, y + im_h - 5)?;
             #[cfg(feature = "font")]
-            crate::text::draw_text(&mut canvas, text, x + 5, y + 5, 36.0, (255, 255, 255))?;
+            crate::text::draw_text(
+                &mut canvas,
+                text,
+                x + 5,
+                y + 5,
+                TIME_FONT_SIZE,
+                TIME_FONT_COLOR,
+                TIME_FONT_BG_COLOR,
+            )?;
         }
     }
 

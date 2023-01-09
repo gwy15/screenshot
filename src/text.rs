@@ -44,6 +44,7 @@ mod font {
     };
 
     const WINDOWS_SIMHEI_PATH: &str = "C:\\Windows\\Fonts\\simhei.ttf";
+    // const WINDOWS_SIMHEI_PATH: &str = r"C:\Windows\Fonts\ITCEDSCR.TTF";
 
     static GLOBAL_FONT: OnceCell<Result<Font>> = OnceCell::new();
 
@@ -75,17 +76,11 @@ mod font {
         load_font(Path::new(WINDOWS_SIMHEI_PATH)).context("Load font failed")
     }
 
-    /// return (image_with_alpha, x_offset)
-    fn text_to_image(
-        font: &Font,
-        text: &str,
-        font_size: f32,
-        color: (u8, u8, u8),
-    ) -> Result<(Mat, i32)> {
+    /// 返回 8UC1 的 mat，x_offset
+    fn text_to_single_channel_image(font: &Font, text: &str, font_size: f32) -> Result<(Mat, i32)> {
         let scale = rusttype::Scale::uniform(font_size);
         let v_metrics = font.v_metrics(scale);
 
-        // layout the glyphs in a line with 20 pixels padding
         let glyphs: Vec<_> = font
             .layout(text, scale, rusttype::point(0.0, v_metrics.ascent))
             .collect();
@@ -103,10 +98,10 @@ mod font {
             (min_x, (max_x - min_x) as u32)
         };
         let mut image = Mat::new_rows_cols_with_default(
-            glyphs_height as i32,
-            glyphs_width as i32,
-            cv_core::CV_8UC4,
-            cv_core::Scalar::from((color.0 as f64, color.1 as f64, color.2 as f64, 0.0)),
+            glyphs_height as i32 + 2,
+            glyphs_width as i32 + 2,
+            cv_core::CV_8UC1,
+            cv_core::Scalar::all(0.0),
         )?;
 
         for glyph in glyphs {
@@ -116,13 +111,124 @@ mod font {
                     let x = (x as i32) + bounding_box.min.x - offset;
                     let y = (y as i32) + bounding_box.min.y;
                     // bgra
-                    type P = cv_core::VecN<u8, 4>;
-                    if let Ok(px) = image.at_2d_mut::<P>(y, x) {
-                        px[3] = (v * 255.0).ceil() as u8;
+                    if let Ok(px) = image.at_2d_mut::<u8>(y + 1, x + 1) {
+                        *px = (v * 255.0).ceil() as u8;
                     }
                 });
             }
         }
+
+        Ok((image, offset))
+    }
+
+    fn mix(c1: f32, a1: f32, c2: f32, a2: f32) -> f32 {
+        // (c1 * a1 + c2 * a2 * (1.0 - a1)) / a
+        (c1 * a1 + c2 * a2 * (1.0 - a1)) / (a1 + a2 * (1.0 - a1))
+    }
+
+    fn text_to_image2(
+        font: &Font,
+        text: &str,
+        font_size: f32,
+        color: (u8, u8, u8),
+        bg_color: (u8, u8, u8),
+    ) -> Result<(Mat, i32)> {
+        let color = (
+            color.0 as f32 / 255.0,
+            color.1 as f32 / 255.0,
+            color.2 as f32 / 255.0,
+        );
+        let bg_color = (
+            bg_color.0 as f32 / 255.0,
+            bg_color.1 as f32 / 255.0,
+            bg_color.2 as f32 / 255.0,
+        );
+
+        let (alpha, offset) = text_to_single_channel_image(font, text, font_size)?;
+
+        let mut image = Mat::new_rows_cols_with_default(
+            alpha.rows(),
+            alpha.cols(),
+            cv_core::CV_8UC4,
+            cv_core::Scalar::from((bg_color.0 as f64, bg_color.1 as f64, bg_color.2 as f64, 0.0)),
+        )?;
+        let (rows, cols) = (image.rows(), image.cols());
+        // generate lambdas
+        let at = |r, c| {
+            if c < 0 || c >= cols {
+                // full transparent
+                return 0;
+            }
+            if r < 0 || r >= rows {
+                return 0;
+            }
+            #[cfg(debug_assertions)]
+            {
+                *alpha.at_2d::<u8>(r, c).unwrap()
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                use opencv::prelude::MatTraitConstManual;
+                unsafe { *alpha.at_2d_unchecked::<u8>(r, c).unwrap() }
+            }
+        };
+        let at_f32 = |r, c| at(r, c) as f32 / 255.0;
+
+        for r in 0..rows {
+            for c in 0..cols {
+                type P = cv_core::VecN<u8, 4>;
+                let px = image.at_2d_mut::<P>(r, c)?;
+
+                let center_alpha = at_f32(r, c);
+                // mix
+                let bg_alpha_1 = at_f32(r - 1, c);
+                let bg_alpha_2 = at_f32(r + 1, c);
+                let bg_alpha_3 = at_f32(r, c - 1);
+                let bg_alpha_4 = at_f32(r, c + 1);
+                debug_assert!(bg_alpha_1 <= 1.0);
+                debug_assert!(bg_alpha_2 <= 1.0);
+                debug_assert!(bg_alpha_3 <= 1.0);
+                debug_assert!(bg_alpha_4 <= 1.0);
+                // 0.5, 0.5, 0.5, 0.5 0.5 => 1 - 0.5^5
+                let bg_alpha = 1.0
+                    - (1.0 - bg_alpha_1)
+                        * (1.0 - bg_alpha_2)
+                        * (1.0 - bg_alpha_3)
+                        * (1.0 - bg_alpha_4);
+
+                let (c1, c2, c3, a) = (
+                    mix(color.0, center_alpha, bg_color.0, bg_alpha),
+                    mix(color.1, center_alpha, bg_color.1, bg_alpha),
+                    mix(color.2, center_alpha, bg_color.2, bg_alpha),
+                    center_alpha + bg_alpha * (1.0 - center_alpha),
+                );
+                px[0] = (c1 * 255.0).ceil() as u8;
+                px[1] = (c2 * 255.0).ceil() as u8;
+                px[2] = (c3 * 255.0).ceil() as u8;
+                px[3] = (a * 255.0).ceil() as u8;
+            }
+        }
+
+        Ok((image, offset))
+    }
+
+    #[allow(dead_code)]
+    /// return (image_with_alpha, x_offset)
+    fn text_to_image(
+        font: &Font,
+        text: &str,
+        font_size: f32,
+        color: (u8, u8, u8),
+    ) -> Result<(Mat, i32)> {
+        let (alpha, offset) = text_to_single_channel_image(font, text, font_size)?;
+
+        let mut image = Mat::new_rows_cols_with_default(
+            alpha.rows(),
+            alpha.cols(),
+            cv_core::CV_8UC4,
+            cv_core::Scalar::from((color.0 as f64, color.1 as f64, color.2 as f64, 0.0)),
+        )?;
+        cv_core::mix_channels(&alpha, &mut image, &[0, 3])?;
 
         Ok((image, offset))
     }
@@ -190,6 +296,7 @@ mod font {
         y: u32,
         font_size: f32,
         color: (u8, u8, u8),
+        bg_color: (u8, u8, u8),
     ) -> Result<()> {
         let font = match GLOBAL_FONT.get_or_init(find_font) {
             Ok(f) => f,
@@ -197,7 +304,7 @@ mod font {
                 anyhow::bail!("Load font failed: {:#?}", e);
             }
         };
-        let (text_mat, offset) = text_to_image(&font, text, font_size, color)?;
+        let (text_mat, offset) = text_to_image2(font, text, font_size, color, bg_color)?;
 
         // split bgra to bgr
         let (front, alpha) = split_alpha(text_mat)?;
@@ -205,38 +312,17 @@ mod font {
         let roi = cv_core::Rect::new(x as i32 + offset, y as i32, front.cols(), front.rows());
         let bg = Mat::roi(img, roi)?;
 
-        // opencv::highgui::imshow("front", &front)?;
-        // opencv::highgui::imshow("alpha", &alpha)?;
-        // opencv::highgui::imshow("roi", &bg)?;
-        // opencv::highgui::wait_key(0)?;
-        // opencv::highgui::destroy_all_windows()?;
-
         // convert 0,255 to 0.0,1.0
         let front = convert_8u3_to_f32(front)?;
         let alpha = convert_8u3_to_f32(alpha)?;
         let bg = convert_8u3_to_f32(bg)?;
 
-        // opencv::highgui::imshow("front-f32", &front)?;
-        // opencv::highgui::imshow("alpha-f32", &alpha)?;
-        // opencv::highgui::imshow("roi-f32", &bg)?;
-        // opencv::highgui::wait_key(0)?;
-        // opencv::highgui::destroy_all_windows()?;
-
         let inv = (cv_core::Scalar::all(1.0) - &alpha).into_result()?;
         let o = bg.mul(&inv, 1.0)? + front.mul(&alpha, 1.0)?;
         let output = o.into_result()?.to_mat()?;
         let output = convert_f32_to_8u3(output)?;
-
-        // opencv::highgui::imshow("blended", &output)?;
-        // opencv::highgui::wait_key(0)?;
-        // opencv::highgui::destroy_all_windows()?;
-
         let mut roi = Mat::roi(img, roi)?;
         cv_core::copy_to(&output, &mut roi, &Mat::default()).context("copy to failed")?;
-
-        // opencv::highgui::imshow("mixed", img)?;
-        // opencv::highgui::wait_key(0)?;
-        // opencv::highgui::destroy_all_windows()?;
 
         Ok(())
     }
