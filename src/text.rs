@@ -1,27 +1,27 @@
 use anyhow::{Context as _, Result};
-use opencv::{
-    core::{self as cv_core, Mat},
-    imgproc,
-};
 
 #[cfg(feature = "font")]
 pub use font::draw_text;
 
 #[cfg(not(feature = "font"))]
 /// open cv put_text
-pub fn draw_text(img: &mut Mat, text: &str, x: u32, y: u32) -> Result<()> {
+pub fn draw_text(img: &mut opencv::core::Mat, text: &str, x: u32, y: u32) -> Result<()> {
+    use opencv::{
+        core::{Point, Scalar},
+        imgproc,
+    };
     const DATA: &[(u32, f64)] = &[(2, 16.), (1, 0.), (0, 255.)];
 
     // 先写一个黑色的背景
     for (offset, color) in DATA {
-        let point = cv_core::Point::new((x + offset) as i32, (y + offset) as i32);
+        let point = Point::new((x + offset) as i32, (y + offset) as i32);
         imgproc::put_text(
             img,
             text,
             point,
             imgproc::FONT_HERSHEY_DUPLEX,
             0.9,
-            cv_core::Scalar::all(*color),
+            Scalar::all(*color),
             1,
             imgproc::LINE_AA,
             false,
@@ -39,8 +39,7 @@ mod font {
     type Font = rusttype::Font<'static>;
     use once_cell::sync::OnceCell;
     use opencv::{
-        core::{self as cv_core, ElemMul, Mat, MatTrait, MatTraitConst, MatTraitConstManual},
-        imgproc,
+        core::{self as cv_core, Mat, MatTrait, MatTraitConst},
         prelude::MatExprTraitConst,
     };
 
@@ -184,14 +183,21 @@ mod font {
         Ok(im_u8)
     }
 
-    pub fn draw_text(img: &mut Mat, text: &str, x: u32, y: u32, font_size: f32) -> Result<()> {
+    pub fn draw_text(
+        img: &mut Mat,
+        text: &str,
+        x: u32,
+        y: u32,
+        font_size: f32,
+        color: (u8, u8, u8),
+    ) -> Result<()> {
         let font = match GLOBAL_FONT.get_or_init(find_font) {
             Ok(f) => f,
             Err(e) => {
                 anyhow::bail!("Load font failed: {:#?}", e);
             }
         };
-        let (text_mat, offset) = text_to_image(&font, text, font_size, (255, 255, 255))?;
+        let (text_mat, offset) = text_to_image(&font, text, font_size, color)?;
 
         // split bgra to bgr
         let (front, alpha) = split_alpha(text_mat)?;

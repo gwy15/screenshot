@@ -15,8 +15,9 @@ lto = 'fat'
 debug = false
 
 [features]
-default = ["window", "font"]
-window = ["msgbox"]
+default = ["font", "info"]
+info = ["font"]
+gui = ["msgbox"]
 font = ["rusttype", "once_cell"]
 
 [dependencies]

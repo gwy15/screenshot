@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "window", windows_subsystem = "windows")]
+#![cfg_attr(feature = "gui", windows_subsystem = "windows")]
 
 #[macro_use]
 extern crate tracing;
@@ -13,6 +13,7 @@ mod image_maker;
 mod process;
 mod utils;
 mod text;
+mod info;
 
 fn _main() -> Result<()> {
     ffmpeg::init().context("ffmpeg init failed")?;
@@ -25,7 +26,7 @@ fn main() -> Result<()> {
 
     let r = _main();
     // msgbox
-    #[cfg(feature = "window")]
+    #[cfg(feature = "gui")]
     if let Err(e) = r.as_ref() {
         msgbox::create(
             "创建缩略图发生错误",

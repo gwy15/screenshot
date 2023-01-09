@@ -31,6 +31,9 @@ pub struct FrameExtractor {
     decoded_frame: frame::Video,
     pub extracted_bgr_frame: frame::Video,
     pub extracted_bgr_frame_time: utils::VideoDuration,
+
+    // info
+    pub info: crate::info::Info,
 }
 impl FrameExtractor {
     pub fn new(input_file: &Path, num_of_frames: u32, scaled_frame_size: u32) -> Result<Self> {
@@ -55,7 +58,13 @@ impl FrameExtractor {
         let decoder = ffmpeg::codec::context::Context::from_parameters(ist.parameters())?
             .decoder()
             .video()?;
-        debug!("video size: W {} x H {}", decoder.width(), decoder.height(),);
+        let video_codec = decoder.codec().context("no codec found")?;
+        debug!(
+            "video size: W {} x H {}, codec {}",
+            decoder.width(),
+            decoder.height(),
+            video_codec.name()
+        );
 
         let duration_s = Self::decide_duration(&ictx, &ist)?;
         debug!("video duration: {}", utils::VideoDuration(duration_s));
@@ -69,6 +78,22 @@ impl FrameExtractor {
             decoder.height() * scaled_frame_size / decoder.width(),
             scaling::Flags::BILINEAR,
         )?;
+        #[cfg(not(feature = "info"))]
+        let info = crate::info::Info;
+
+        #[cfg(feature = "info")]
+        let info = crate::info::Info {
+            file_name: input_file
+                .file_name()
+                .context("No filename")?
+                .to_string_lossy()
+                .to_string(),
+            file_size: input_file.metadata().context("No metadata")?.len() as usize,
+            video_width: decoder.width(),
+            video_height: decoder.height(),
+            video_duration: duration_s,
+            video_codec,
+        };
 
         Ok(Self {
             ictx,
@@ -82,6 +107,7 @@ impl FrameExtractor {
             decoded_frame: frame::Video::empty(),
             extracted_bgr_frame: frame::Video::empty(),
             extracted_bgr_frame_time: utils::VideoDuration(Rational::new(0, 1)),
+            info,
         })
     }
 

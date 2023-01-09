@@ -1,4 +1,4 @@
-use crate::cli::Args;
+use crate::{cli::Args, info::Info};
 use anyhow::Result;
 use opencv::{
     core::{self as cv_core, prelude::*, Rect, Vector},
@@ -34,7 +34,11 @@ pub fn open_frame_data(
 }
 
 /// 返回
-pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::Vector<u8>> {
+pub fn merge_images(
+    images: Vec<(Mat, String)>,
+    info: Info,
+    args: &Args,
+) -> Result<cv_core::Vector<u8>> {
     if images.is_empty() {
         anyhow::bail!("没有截图生成");
     }
@@ -51,9 +55,10 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
         debug!("自动调整行列数，使得图片不会太高");
         std::mem::swap(&mut rows, &mut cols);
     }
+    let info_height = crate::info::info_area_height(args);
 
     let canvas_w = im_w * cols + args.space * (cols + 1);
-    let canvas_h = im_h * rows + args.space * (rows + 1);
+    let canvas_h = im_h * rows + args.space * (rows + 1) + info_height;
 
     let mut canvas = Mat::new_rows_cols_with_default(
         canvas_h as i32,
@@ -62,13 +67,15 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
         cv_core::Scalar::all(255.),
     )?;
 
+    crate::info::plot_info(&mut canvas, info, args)?;
+
     'row: for r in 0..rows {
         for c in 0..cols {
             let idx = r as usize * cols as usize + c as usize;
             let Some((image, text)) = images.get(idx) else { break 'row; };
             // put image to canvas
             let x = args.space + c * (args.space + im_w);
-            let y = args.space + r * (args.space + im_h);
+            let y = args.space + r * (args.space + im_h) + info_height;
             let pos = Rect::new(x as i32, y as i32, im_w as i32, im_h as i32);
             let mut roi = Mat::roi(&canvas, pos)?;
             image.copy_to(&mut roi)?;
@@ -86,7 +93,7 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
             #[cfg(not(feature = "font"))]
             crate::text::draw_text(&mut canvas, text, x + 5, y + im_h - 5)?;
             #[cfg(feature = "font")]
-            crate::text::draw_text(&mut canvas, text, x + 5, y + 5, 24.0)?;
+            crate::text::draw_text(&mut canvas, text, x + 5, y + 5, 36.0, (255, 255, 255))?;
         }
     }
 
