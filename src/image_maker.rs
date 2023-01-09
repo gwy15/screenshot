@@ -83,7 +83,10 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
             imgproc::rectangle(&mut canvas, border_pos, border_color, 1, imgproc::LINE_8, 0)?;
 
             // draw text
+            #[cfg(not(feature = "font"))]
             crate::text::draw_text(&mut canvas, text, x + 5, y + im_h - 5)?;
+            #[cfg(feature = "font")]
+            crate::text::draw_text(&mut canvas, text, x + 5, y + 5, 24.0)?;
         }
     }
 
