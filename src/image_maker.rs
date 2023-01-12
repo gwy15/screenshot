@@ -8,7 +8,7 @@ use opencv::{
 
 const TIME_FONT_SIZE: f32 = 32.0;
 const TIME_FONT_COLOR: (u8, u8, u8) = (0xFF, 0xFF, 0xFF);
-const TIME_FONT_BG_COLOR: (u8, u8, u8) = (0x22, 0x22, 0x22);
+const TIME_FONT_BG_COLOR: (u8, u8, u8) = (0x00, 0x00, 0x00);
 
 /// data are in BGR24 format, read data as opencv image
 pub fn open_frame_data(

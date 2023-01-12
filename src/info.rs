@@ -9,7 +9,7 @@ pub const LINE_HEIGHT: u32 = 42;
 #[cfg(feature = "info")]
 pub const COLOR: (u8, u8, u8) = (0x00, 0x00, 0x00);
 #[cfg(feature = "info")]
-pub const BG_COLOR: (u8, u8, u8) = (0x66, 0x66, 0x66);
+pub const BG_COLOR: (u8, u8, u8) = (0xCC, 0xCC, 0xCC);
 
 #[cfg(not(feature = "info"))]
 #[derive(Clone)]

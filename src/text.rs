@@ -76,7 +76,8 @@ mod font {
         load_font(Path::new(WINDOWS_SIMHEI_PATH)).context("Load font failed")
     }
 
-    /// 返回 8UC1 的 mat，x_offset
+    /// 返回 32FC1 的 mat，x_offset
+    /// 会多留 1px 的边界
     fn text_to_single_channel_image(font: &Font, text: &str, font_size: f32) -> Result<(Mat, i32)> {
         let scale = rusttype::Scale::uniform(font_size);
         let v_metrics = font.v_metrics(scale);
@@ -100,7 +101,7 @@ mod font {
         let mut image = Mat::new_rows_cols_with_default(
             glyphs_height as i32 + 2,
             glyphs_width as i32 + 2,
-            cv_core::CV_8UC1,
+            cv_core::CV_32FC1,
             cv_core::Scalar::all(0.0),
         )?;
 
@@ -111,8 +112,8 @@ mod font {
                     let x = (x as i32) + bounding_box.min.x - offset;
                     let y = (y as i32) + bounding_box.min.y;
                     // bgra
-                    if let Ok(px) = image.at_2d_mut::<u8>(y + 1, x + 1) {
-                        *px = (v * 255.0).ceil() as u8;
+                    if let Ok(px) = image.at_2d_mut::<f32>(y + 1, x + 1) {
+                        *px = v;
                     }
                 });
             }
@@ -121,11 +122,25 @@ mod font {
         Ok((image, offset))
     }
 
-    fn mix(c1: f32, a1: f32, c2: f32, a2: f32) -> f32 {
-        // (c1 * a1 + c2 * a2 * (1.0 - a1)) / a
-        (c1 * a1 + c2 * a2 * (1.0 - a1)) / (a1 + a2 * (1.0 - a1))
+    fn blur_fg_to_bg(fg: &Mat, ksize: i32, sigma: f64) -> Result<Mat> {
+        let mut output = Mat::new_rows_cols_with_default(
+            fg.rows(),
+            fg.cols(),
+            fg.typ(),
+            cv_core::Scalar::all(0.0),
+        )?;
+        opencv::imgproc::gaussian_blur(
+            fg,
+            &mut output,
+            cv_core::Size_::new(ksize, ksize),
+            sigma,
+            sigma,
+            cv_core::BORDER_REPLICATE,
+        )?;
+        Ok(output)
     }
 
+    /// 返回 (32FC3, x_offset)
     fn text_to_image2(
         font: &Font,
         text: &str,
@@ -144,110 +159,66 @@ mod font {
             bg_color.2 as f32 / 255.0,
         );
 
-        let (alpha, offset) = text_to_single_channel_image(font, text, font_size)?;
+        let (alpha_f32, offset) = text_to_single_channel_image(font, text, font_size)?;
+        // blur alpha
+        let sigma = (font_size / 6.0) as f64;
+        let ksize = (sigma / 2.0).ceil() as i32 * 2 + 1;
+        let blurred_f32 = blur_fg_to_bg(&alpha_f32, ksize, sigma)?;
 
         let mut image = Mat::new_rows_cols_with_default(
-            alpha.rows(),
-            alpha.cols(),
-            cv_core::CV_8UC4,
-            cv_core::Scalar::from((bg_color.0 as f64, bg_color.1 as f64, bg_color.2 as f64, 0.0)),
+            alpha_f32.rows(),
+            alpha_f32.cols(),
+            cv_core::CV_32FC4,
+            cv_core::Scalar::all(0.0),
         )?;
         let (rows, cols) = (image.rows(), image.cols());
         // generate lambdas
-        let at = |r, c| {
-            if c < 0 || c >= cols {
-                // full transparent
-                return 0;
-            }
-            if r < 0 || r >= rows {
-                return 0;
-            }
-            #[cfg(debug_assertions)]
-            {
-                *alpha.at_2d::<u8>(r, c).unwrap()
-            }
-            #[cfg(not(debug_assertions))]
-            {
-                use opencv::prelude::MatTraitConstManual;
-                unsafe { *alpha.at_2d_unchecked::<u8>(r, c).unwrap() }
-            }
-        };
-        let at_f32 = |r, c| at(r, c) as f32 / 255.0;
 
         for r in 0..rows {
             for c in 0..cols {
-                type P = cv_core::VecN<u8, 4>;
-                let px = image.at_2d_mut::<P>(r, c)?;
-
-                let center_alpha = at_f32(r, c);
-                // mix
-                let bg_alpha_1 = at_f32(r - 1, c);
-                let bg_alpha_2 = at_f32(r + 1, c);
-                let bg_alpha_3 = at_f32(r, c - 1);
-                let bg_alpha_4 = at_f32(r, c + 1);
-                debug_assert!(bg_alpha_1 <= 1.0);
-                debug_assert!(bg_alpha_2 <= 1.0);
-                debug_assert!(bg_alpha_3 <= 1.0);
-                debug_assert!(bg_alpha_4 <= 1.0);
-                // 0.5, 0.5, 0.5, 0.5 0.5 => 1 - 0.5^5
-                let bg_alpha = 1.0
-                    - (1.0 - bg_alpha_1)
-                        * (1.0 - bg_alpha_2)
-                        * (1.0 - bg_alpha_3)
-                        * (1.0 - bg_alpha_4);
-
-                let (c1, c2, c3, a) = (
-                    mix(color.0, center_alpha, bg_color.0, bg_alpha),
-                    mix(color.1, center_alpha, bg_color.1, bg_alpha),
-                    mix(color.2, center_alpha, bg_color.2, bg_alpha),
-                    center_alpha + bg_alpha * (1.0 - center_alpha),
+                // compute
+                let a1 = *blurred_f32.at_2d::<f32>(r, c)?;
+                let a2 = *alpha_f32.at_2d::<f32>(r, c)?;
+                let alpha = a1 + a2 * (1.0 - a1);
+                if alpha < 1e-6 {
+                    continue;
+                }
+                // color: f' = a2/a' f2 + (1-a2)a1/a' f2
+                let k2 = a2 / alpha;
+                let k1 = a1 * (1.0 - a2) / alpha;
+                let color = (
+                    k2 * color.0 + k1 * bg_color.0,
+                    k2 * color.1 + k1 * bg_color.1,
+                    k2 * color.2 + k1 * bg_color.2,
                 );
-                px[0] = (c1 * 255.0).ceil() as u8;
-                px[1] = (c2 * 255.0).ceil() as u8;
-                px[2] = (c3 * 255.0).ceil() as u8;
-                px[3] = (a * 255.0).ceil() as u8;
+                type P = cv_core::VecN<f32, 4>;
+                let px = image.at_2d_mut::<P>(r, c)?;
+                *px = P::from((color.0, color.1, color.2, alpha));
             }
         }
 
         Ok((image, offset))
     }
 
-    #[allow(dead_code)]
-    /// return (image_with_alpha, x_offset)
-    fn text_to_image(
-        font: &Font,
-        text: &str,
-        font_size: f32,
-        color: (u8, u8, u8),
-    ) -> Result<(Mat, i32)> {
-        let (alpha, offset) = text_to_single_channel_image(font, text, font_size)?;
-
-        let mut image = Mat::new_rows_cols_with_default(
-            alpha.rows(),
-            alpha.cols(),
-            cv_core::CV_8UC4,
-            cv_core::Scalar::from((color.0 as f64, color.1 as f64, color.2 as f64, 0.0)),
-        )?;
-        cv_core::mix_channels(&alpha, &mut image, &[0, 3])?;
-
-        Ok((image, offset))
-    }
-
     /// 把 (BGRA) Mat 转换成 (BGR) 和 (AAA) Mat
     fn split_alpha(im: Mat) -> Result<(Mat, Mat)> {
-        assert_eq!(im.typ(), cv_core::CV_8UC4);
-        let front = Mat::new_rows_cols_with_default(
-            im.rows(),
-            im.cols(),
-            cv_core::CV_8UC3,
-            cv_core::Scalar::all(0.),
-        )?;
-        let alpha = Mat::new_rows_cols_with_default(
-            im.rows(),
-            im.cols(),
-            cv_core::CV_8UC3,
-            cv_core::Scalar::all(0.),
-        )?;
+        let ty = match im.typ() {
+            cv_core::CV_8UC4 => {
+                debug!("split_alpha: 8UC4");
+                cv_core::CV_8UC3
+            }
+            cv_core::CV_32FC4 => {
+                debug!("split_alpha: 32FC4");
+                cv_core::CV_32FC3
+            }
+            _ => {
+                anyhow::bail!("Unknown Mat type to split");
+            }
+        };
+        let front =
+            Mat::new_rows_cols_with_default(im.rows(), im.cols(), ty, cv_core::Scalar::all(0.))?;
+        let alpha =
+            Mat::new_rows_cols_with_default(im.rows(), im.cols(), ty, cv_core::Scalar::all(0.))?;
         let mut output: cv_core::Vector<Mat> = cv_core::Vector::new();
         output.push(Mat::copy(&front)?);
         output.push(Mat::copy(&alpha)?);
@@ -259,7 +230,8 @@ mod font {
                 0, 0, 1, 1, 2, 2, // rgb
                 3, 3, 3, 4, 3, 5, // alpha
             ],
-        )?;
+        )
+        .context("split alpha channels failed")?;
         Ok((front, alpha))
     }
 
@@ -304,42 +276,28 @@ mod font {
                 anyhow::bail!("Load font failed: {:#?}", e);
             }
         };
-        let (text_mat, offset) = text_to_image2(font, text, font_size, color, bg_color)?;
+        let (text_f32, offset) = text_to_image2(font, text, font_size, color, bg_color)?;
 
         // split bgra to bgr
-        let (front, alpha) = split_alpha(text_mat)?;
+        let (front_f32, alpha_f32) = split_alpha(text_f32)?;
         //
-        let roi = cv_core::Rect::new(x as i32 + offset, y as i32, front.cols(), front.rows());
+        let roi = cv_core::Rect::new(
+            x as i32 + offset,
+            y as i32,
+            front_f32.cols(),
+            front_f32.rows(),
+        );
         let bg = Mat::roi(img, roi)?;
 
-        // convert 0,255 to 0.0,1.0
-        let front = convert_8u3_to_f32(front)?;
-        let alpha = convert_8u3_to_f32(alpha)?;
-        let bg = convert_8u3_to_f32(bg)?;
+        let bg_f32 = convert_8u3_to_f32(bg)?;
 
-        let inv = (cv_core::Scalar::all(1.0) - &alpha).into_result()?;
-        let o = bg.mul(&inv, 1.0)? + front.mul(&alpha, 1.0)?;
-        let output = o.into_result()?.to_mat()?;
-        let output = convert_f32_to_8u3(output)?;
+        let inv = (cv_core::Scalar::all(1.0) - &alpha_f32).into_result()?;
+        let o = bg_f32.mul(&inv, 1.0)? + front_f32.mul(&alpha_f32, 1.0)?;
+        let output_f32 = o.into_result()?.to_mat()?;
+        let output = convert_f32_to_8u3(output_f32)?;
         let mut roi = Mat::roi(img, roi)?;
         cv_core::copy_to(&output, &mut roi, &Mat::default()).context("copy to failed")?;
 
         Ok(())
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        #[test]
-        fn text_to_image_test() {
-            let font = find_font().unwrap();
-            let text = "你好";
-            // let font = load_font(Path::new(r"C:\Windows\Fonts\ITCEDSCR.TTF")).unwrap();
-            // let text = "fig";
-            // bgr
-            let color = (0, 0, 255);
-            let (image, offset) = text_to_image(&font, text, 800.0, color).unwrap();
-            println!("offset: {}", offset);
-        }
     }
 }
