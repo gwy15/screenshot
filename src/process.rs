@@ -54,6 +54,7 @@ fn run(file: &std::path::Path, args: &cli::Args) -> Result<()> {
         args.num_of_frames(),
         args.scaled_frame_width(),
     )?;
+    let info = extractor.info.clone();
 
     let mut frames = vec![];
 
@@ -68,7 +69,7 @@ fn run(file: &std::path::Path, args: &cli::Args) -> Result<()> {
         frames.push((mat, time.to_string()));
     }
 
-    let buf = image_maker::merge_images(frames, args)?;
+    let buf = image_maker::merge_images(frames, info, args)?;
 
     #[cfg(target_os = "windows")]
     if args.show {

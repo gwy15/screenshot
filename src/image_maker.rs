@@ -1,10 +1,14 @@
-use crate::cli::Args;
+use crate::{cli::Args, info::Info};
 use anyhow::Result;
 use opencv::{
     core::{self as cv_core, prelude::*, Rect, Vector},
     imgcodecs, imgproc,
     prelude::*,
 };
+
+const TIME_FONT_SIZE: f32 = 32.0;
+const TIME_FONT_COLOR: (u8, u8, u8) = (0xFF, 0xFF, 0xFF);
+const TIME_FONT_BG_COLOR: (u8, u8, u8) = (0x00, 0x00, 0x00);
 
 /// data are in BGR24 format, read data as opencv image
 pub fn open_frame_data(
@@ -34,7 +38,11 @@ pub fn open_frame_data(
 }
 
 /// 返回
-pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::Vector<u8>> {
+pub fn merge_images(
+    images: Vec<(Mat, String)>,
+    info: Info,
+    args: &Args,
+) -> Result<cv_core::Vector<u8>> {
     if images.is_empty() {
         anyhow::bail!("没有截图生成");
     }
@@ -51,9 +59,10 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
         debug!("自动调整行列数，使得图片不会太高");
         std::mem::swap(&mut rows, &mut cols);
     }
+    let info_height = crate::info::info_area_height(args);
 
     let canvas_w = im_w * cols + args.space * (cols + 1);
-    let canvas_h = im_h * rows + args.space * (rows + 1);
+    let canvas_h = im_h * rows + args.space * (rows + 1) + info_height;
 
     let mut canvas = Mat::new_rows_cols_with_default(
         canvas_h as i32,
@@ -62,13 +71,15 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
         cv_core::Scalar::all(255.),
     )?;
 
+    crate::info::plot_info(&mut canvas, info, args)?;
+
     'row: for r in 0..rows {
         for c in 0..cols {
             let idx = r as usize * cols as usize + c as usize;
             let Some((image, text)) = images.get(idx) else { break 'row; };
             // put image to canvas
             let x = args.space + c * (args.space + im_w);
-            let y = args.space + r * (args.space + im_h);
+            let y = args.space + r * (args.space + im_h) + info_height;
             let pos = Rect::new(x as i32, y as i32, im_w as i32, im_h as i32);
             let mut roi = Mat::roi(&canvas, pos)?;
             image.copy_to(&mut roi)?;
@@ -83,7 +94,18 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
             imgproc::rectangle(&mut canvas, border_pos, border_color, 1, imgproc::LINE_8, 0)?;
 
             // draw text
-            draw_text(&mut canvas, text, x, y, im_h)?;
+            #[cfg(not(feature = "font"))]
+            crate::text::draw_text(&mut canvas, text, x + 5, y + im_h - 5)?;
+            #[cfg(feature = "font")]
+            crate::text::draw_text(
+                &mut canvas,
+                text,
+                x + 5,
+                y + 5,
+                TIME_FONT_SIZE,
+                TIME_FONT_COLOR,
+                TIME_FONT_BG_COLOR,
+            )?;
         }
     }
 
@@ -94,25 +116,4 @@ pub fn merge_images(images: Vec<(Mat, String)>, args: &Args) -> Result<cv_core::
     imgcodecs::imencode(&ext, &canvas, &mut buf, &flags)?;
 
     Ok(buf)
-}
-
-fn draw_text(img: &mut Mat, text: &str, x: u32, y: u32, im_h: u32) -> Result<()> {
-    const DATA: &[(u32, f64)] = &[(2, 16.), (1, 0.), (0, 255.)];
-
-    // 先写一个黑色的背景
-    for (offset, color) in DATA {
-        let point = cv_core::Point::new((x + 5 + offset) as i32, (y + im_h - 5 + offset) as i32);
-        imgproc::put_text(
-            img,
-            text,
-            point,
-            imgproc::FONT_HERSHEY_DUPLEX,
-            0.9,
-            cv_core::Scalar::all(*color),
-            1,
-            imgproc::LINE_AA,
-            false,
-        )?;
-    }
-    Ok(())
 }
