@@ -105,6 +105,7 @@ pub fn merge_images(
                 TIME_FONT_SIZE,
                 TIME_FONT_COLOR,
                 TIME_FONT_BG_COLOR,
+                args.font.as_deref(),
             )?;
         }
     }

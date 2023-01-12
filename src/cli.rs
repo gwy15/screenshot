@@ -18,6 +18,10 @@ pub struct Args {
     #[clap(long, default_value = "jpg", help = "输出文件扩展名")]
     pub ext: String,
 
+    #[cfg(feature = "font")]
+    #[clap(long, short, help = "手动指定使用字体的路径")]
+    pub font: Option<PathBuf>,
+
     // flags
     #[clap(long, help = "输出文件去掉视频扩展名")]
     pub remove_ext: bool,

@@ -43,8 +43,8 @@ mod font {
         prelude::MatExprTraitConst,
     };
 
+    #[cfg(windows)]
     const WINDOWS_SIMHEI_PATH: &str = "C:\\Windows\\Fonts\\simhei.ttf";
-    // const WINDOWS_SIMHEI_PATH: &str = r"C:\Windows\Fonts\ITCEDSCR.TTF";
 
     static GLOBAL_FONT: OnceCell<Result<Font>> = OnceCell::new();
 
@@ -72,8 +72,30 @@ mod font {
         Ok(font)
     }
 
-    fn find_font() -> Result<Font> {
-        load_font(Path::new(WINDOWS_SIMHEI_PATH)).context("Load font failed")
+    fn find_font(path: Option<&Path>) -> Result<Font> {
+        if let Some(path) = path {
+            match load_font(path) {
+                Ok(f) => {
+                    info!("Load font {} success", path.display());
+                    return Ok(f);
+                }
+                Err(e) => {
+                    warn!(
+                        "Load font {} failed: {:?}, fallback to default",
+                        path.display(),
+                        e
+                    );
+                }
+            }
+        }
+        #[cfg(windows)]
+        {
+            load_font(Path::new(WINDOWS_SIMHEI_PATH)).context("Load font failed")
+        }
+        #[cfg(not(windows))]
+        {
+            anyhow::bail!("对于非 Windows 系统，您必须手动指定字体路径")
+        }
     }
 
     /// 返回 32FC1 的 mat，x_offset
@@ -129,8 +151,22 @@ mod font {
             fg.typ(),
             cv_core::Scalar::all(0.0),
         )?;
-        opencv::imgproc::gaussian_blur(
+        let dilate_kernel = opencv::imgproc::get_structuring_element(
+            opencv::imgproc::MorphShapes::MORPH_RECT as i32,
+            cv_core::Size_::new(3, 3),
+            cv_core::Point_::new(-1, -1),
+        )?;
+        opencv::imgproc::dilate(
             fg,
+            &mut output,
+            &dilate_kernel,
+            cv_core::Point_::new(-1, -1),
+            1,
+            cv_core::BORDER_CONSTANT,
+            opencv::imgproc::morphology_default_border_value()?,
+        )?;
+        opencv::imgproc::gaussian_blur(
+            &output.clone(),
             &mut output,
             cv_core::Size_::new(ksize, ksize),
             sigma,
@@ -161,8 +197,8 @@ mod font {
 
         let (alpha_f32, offset) = text_to_single_channel_image(font, text, font_size)?;
         // blur alpha
-        let sigma = (font_size / 6.0) as f64;
-        let ksize = (sigma / 2.0).ceil() as i32 * 2 + 1;
+        let sigma = (font_size / 16.0) as f64;
+        let ksize = sigma.ceil() as i32 * 2 + 1;
         let blurred_f32 = blur_fg_to_bg(&alpha_f32, ksize, sigma)?;
 
         let mut image = Mat::new_rows_cols_with_default(
@@ -203,14 +239,8 @@ mod font {
     /// 把 (BGRA) Mat 转换成 (BGR) 和 (AAA) Mat
     fn split_alpha(im: Mat) -> Result<(Mat, Mat)> {
         let ty = match im.typ() {
-            cv_core::CV_8UC4 => {
-                debug!("split_alpha: 8UC4");
-                cv_core::CV_8UC3
-            }
-            cv_core::CV_32FC4 => {
-                debug!("split_alpha: 32FC4");
-                cv_core::CV_32FC3
-            }
+            cv_core::CV_8UC4 => cv_core::CV_8UC3,
+            cv_core::CV_32FC4 => cv_core::CV_32FC3,
             _ => {
                 anyhow::bail!("Unknown Mat type to split");
             }
@@ -269,8 +299,9 @@ mod font {
         font_size: f32,
         color: (u8, u8, u8),
         bg_color: (u8, u8, u8),
+        font_path: Option<&Path>,
     ) -> Result<()> {
-        let font = match GLOBAL_FONT.get_or_init(find_font) {
+        let font = match GLOBAL_FONT.get_or_init(move || find_font(font_path)) {
             Ok(f) => f,
             Err(e) => {
                 anyhow::bail!("Load font failed: {:#?}", e);

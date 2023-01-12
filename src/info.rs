@@ -7,9 +7,9 @@ pub const TEXT_SIZE: f32 = 36.0;
 #[cfg(feature = "info")]
 pub const LINE_HEIGHT: u32 = 42;
 #[cfg(feature = "info")]
-pub const COLOR: (u8, u8, u8) = (0x00, 0x00, 0x00);
+pub const COLOR: (u8, u8, u8) = (0xFF, 0xFF, 0xFF);
 #[cfg(feature = "info")]
-pub const BG_COLOR: (u8, u8, u8) = (0xCC, 0xCC, 0xCC);
+pub const BG_COLOR: (u8, u8, u8) = (0x22, 0x22, 0x22);
 
 #[cfg(not(feature = "info"))]
 #[derive(Clone)]
@@ -75,6 +75,7 @@ pub fn plot_info(image: &mut Mat, info: Info, args: &Args) -> Result<()> {
         TEXT_SIZE,
         COLOR,
         BG_COLOR,
+        args.font.as_deref(),
     )?;
     draw_text(
         image,
@@ -89,6 +90,7 @@ pub fn plot_info(image: &mut Mat, info: Info, args: &Args) -> Result<()> {
         TEXT_SIZE,
         COLOR,
         BG_COLOR,
+        args.font.as_deref(),
     )?;
     draw_text(
         image,
@@ -98,6 +100,7 @@ pub fn plot_info(image: &mut Mat, info: Info, args: &Args) -> Result<()> {
         TEXT_SIZE,
         COLOR,
         BG_COLOR,
+        args.font.as_deref(),
     )?;
 
     Ok(())
