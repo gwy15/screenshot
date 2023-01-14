@@ -6,7 +6,7 @@ RUN apt-get update \
         clang libclang-dev libopencv-dev \
         libavformat-dev libavcodec-dev
 COPY . .
-RUN cargo b --release --no-default-features --bin screenshot \
+RUN cargo b --release --no-default-features --features font,info --bin screenshot \
     && strip target/release/screenshot \
     && echo "Required dynamic libraries: " \
     && ldd target/release/screenshot
