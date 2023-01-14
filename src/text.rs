@@ -94,9 +94,10 @@ mod font {
         }
         #[cfg(not(windows))]
         {
-            static EMBEDDED_FONT: &[u8] = include_bytes!("../assets/SourceHanSansCN-Medium.otf");
+            static EMBEDDED_FONT: &[u8] = include_bytes!("../assets/fonts/SourceHanSansCN-Medium.otf");
             let font = Font::try_from_vec(EMBEDDED_FONT.to_vec())
                 .context("rusttype load font from embedded font file failed")?;
+            Ok(font)
         }
     }
 
