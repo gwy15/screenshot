@@ -72,7 +72,7 @@ mod font {
         Ok(font)
     }
 
-    fn find_font(path: Option<&Path>) -> Result<Font> {
+    fn auto_find_font(path: Option<&Path>) -> Result<Font> {
         if let Some(path) = path {
             match load_font(path) {
                 Ok(f) => {
@@ -94,7 +94,9 @@ mod font {
         }
         #[cfg(not(windows))]
         {
-            anyhow::bail!("对于非 Windows 系统，您必须手动指定字体路径")
+            static EMBEDDED_FONT: &[u8] = include_bytes!("../assets/SourceHanSansCN-Medium.otf");
+            let font = Font::try_from_vec(EMBEDDED_FONT.to_vec())
+                .context("rusttype load font from embedded font file failed")?;
         }
     }
 
@@ -153,7 +155,7 @@ mod font {
         )?;
         let dilate_kernel = opencv::imgproc::get_structuring_element(
             opencv::imgproc::MorphShapes::MORPH_RECT as i32,
-            cv_core::Size_::new(3, 3),
+            cv_core::Size_::new(4, 4),
             cv_core::Point_::new(-1, -1),
         )?;
         opencv::imgproc::dilate(
@@ -197,9 +199,7 @@ mod font {
 
         let (alpha_f32, offset) = text_to_single_channel_image(font, text, font_size)?;
         // blur alpha
-        let sigma = (font_size / 16.0) as f64;
-        let ksize = sigma.ceil() as i32 * 2 + 1;
-        let blurred_f32 = blur_fg_to_bg(&alpha_f32, ksize, sigma)?;
+        let blurred_f32 = blur_fg_to_bg(&alpha_f32, 1, 2.0)?;
 
         let mut image = Mat::new_rows_cols_with_default(
             alpha_f32.rows(),
@@ -301,7 +301,7 @@ mod font {
         bg_color: (u8, u8, u8),
         font_path: Option<&Path>,
     ) -> Result<()> {
-        let font = match GLOBAL_FONT.get_or_init(move || find_font(font_path)) {
+        let font = match GLOBAL_FONT.get_or_init(move || auto_find_font(font_path)) {
             Ok(f) => f,
             Err(e) => {
                 anyhow::bail!("Load font failed: {:#?}", e);
